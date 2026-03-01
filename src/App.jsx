@@ -45,25 +45,15 @@ export default function App() {
 
   // History for undo/redo (tracks points + config of active diagram)
   const {
-    state: historyPresent,
     push: pushHistory,
     undo: undoHistory,
     redo: redoHistory,
     reset: resetHistory,
     canUndo,
     canRedo,
+    pastTop,
+    futureTop,
   } = useHistory({ points: activeDiagram.points, config: activeDiagram.config });
-
-  // When true, the next historyPresent change should be applied back to the
-  // diagram store (i.e. the user triggered undo or redo).
-  const pendingHistoryApply = useRef(false);
-
-  useEffect(() => {
-    if (pendingHistoryApply.current) {
-      pendingHistoryApply.current = false;
-      replaceDiagramData(historyPresent);
-    }
-  }, [historyPresent, replaceDiagramData]);
 
   // Reset per-diagram undo/redo history when the active diagram changes.
   const prevDiagramId = useRef(activeDiagramId);
@@ -100,6 +90,18 @@ export default function App() {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  const handleUndo = useCallback(() => {
+    if (!canUndo || !pastTop) return;
+    replaceDiagramData(pastTop);
+    undoHistory();
+  }, [undoHistory, canUndo, pastTop, replaceDiagramData]);
+
+  const handleRedo = useCallback(() => {
+    if (!canRedo || !futureTop) return;
+    replaceDiagramData(futureTop);
+    redoHistory();
+  }, [redoHistory, canRedo, futureTop, replaceDiagramData]);
+
   // Keyboard shortcuts: undo/redo
   useEffect(() => {
     const handler = (e) => {
@@ -116,23 +118,7 @@ export default function App() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  });
-
-  const snapshot = useCallback(() => {
-    pushHistory({ points: activeDiagram.points, config: activeDiagram.config });
-  }, [activeDiagram.points, activeDiagram.config, pushHistory]);
-
-  const handleUndo = useCallback(() => {
-    if (!canUndo) return;
-    pendingHistoryApply.current = true;
-    undoHistory();
-  }, [undoHistory, canUndo]);
-
-  const handleRedo = useCallback(() => {
-    if (!canRedo) return;
-    pendingHistoryApply.current = true;
-    redoHistory();
-  }, [redoHistory, canRedo]);
+  }, [handleUndo, handleRedo]);
 
   // --- Point drag handlers ---
   const handlePointMove = useCallback(
@@ -142,51 +128,67 @@ export default function App() {
     [updatePoint]
   );
 
-  const handlePointMoveEnd = useCallback(
-    (id) => {
-      snapshot();
-    },
-    [snapshot]
-  );
+  // Capture the final drag position in history when the drag ends.
+  // activeDiagram.points reflects the latest committed drag position.
+  const handlePointMoveEnd = useCallback(() => {
+    pushHistory({ points: activeDiagram.points, config: activeDiagram.config });
+  }, [pushHistory, activeDiagram.points, activeDiagram.config]);
 
   // --- Add point (click canvas) ---
   const handleCanvasClick = useCallback(
     (pos) => {
-      const colorIndex = (activeDiagram.points.length) % COLORS.length;
-      addPoint({ ...pos, color: COLORS[colorIndex] });
-      snapshot();
+      const colorIndex = activeDiagram.points.length % COLORS.length;
+      const newPoint = addPoint({ ...pos, color: COLORS[colorIndex] });
+      if (newPoint) {
+        pushHistory({
+          points: [...activeDiagram.points, newPoint],
+          config: activeDiagram.config,
+        });
+      }
     },
-    [activeDiagram.points.length, addPoint, snapshot]
+    [activeDiagram.points, activeDiagram.config, addPoint, pushHistory]
   );
 
   const handleAddPointButton = useCallback(() => {
-    addPoint({});
-    snapshot();
-  }, [addPoint, snapshot]);
+    const newPoint = addPoint({});
+    if (newPoint) {
+      pushHistory({
+        points: [...activeDiagram.points, newPoint],
+        config: activeDiagram.config,
+      });
+    }
+  }, [addPoint, pushHistory, activeDiagram.points, activeDiagram.config]);
 
   // --- Point list handlers ---
   const handleRenamePoint = useCallback(
     (id, label) => {
+      const updatedPoints = activeDiagram.points.map((p) =>
+        p.id === id ? { ...p, label } : p
+      );
+      pushHistory({ points: updatedPoints, config: activeDiagram.config });
       updatePoint(id, { label });
-      snapshot();
     },
-    [updatePoint, snapshot]
+    [updatePoint, pushHistory, activeDiagram.points, activeDiagram.config]
   );
 
   const handleRemovePoint = useCallback(
     (id) => {
+      const updatedPoints = activeDiagram.points.filter((p) => p.id !== id);
+      pushHistory({ points: updatedPoints, config: activeDiagram.config });
       removePoint(id);
-      snapshot();
     },
-    [removePoint, snapshot]
+    [removePoint, pushHistory, activeDiagram.points, activeDiagram.config]
   );
 
   const handleColorChange = useCallback(
     (id, color) => {
+      const updatedPoints = activeDiagram.points.map((p) =>
+        p.id === id ? { ...p, color } : p
+      );
+      pushHistory({ points: updatedPoints, config: activeDiagram.config });
       updatePoint(id, { color });
-      snapshot();
     },
-    [updatePoint, snapshot]
+    [updatePoint, pushHistory, activeDiagram.points, activeDiagram.config]
   );
 
   // --- Config ---
@@ -200,10 +202,10 @@ export default function App() {
   // --- Import ---
   const handleImport = useCallback(
     ({ config, points }) => {
-      snapshot();
+      pushHistory({ config, points });
       replaceDiagramData({ config, points });
     },
-    [replaceDiagramData, snapshot]
+    [replaceDiagramData, pushHistory]
   );
 
   // --- Export ---

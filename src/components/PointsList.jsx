@@ -13,10 +13,10 @@ const btnRemove = {
 };
 
 const inputStyle = {
-  background: "#0d0f14",
-  border: "1px solid #252a3a",
+  background: "#131622",
+  border: "1px solid #00e5ff66",
   borderRadius: "4px",
-  color: "#c8cad8",
+  color: "#fff",
   padding: "3px 6px",
   fontSize: "12px",
   fontFamily: "'DM Mono', monospace",

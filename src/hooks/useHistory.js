@@ -40,6 +40,8 @@ export function useHistory(initialState) {
     reset,
     canUndo: historyState.past.length > 0,
     canRedo: historyState.future.length > 0,
+    pastTop: historyState.past.length > 0 ? historyState.past[historyState.past.length - 1] : null,
+    futureTop: historyState.future.length > 0 ? historyState.future[0] : null,
   };
 }
 
