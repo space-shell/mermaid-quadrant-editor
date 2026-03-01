@@ -14,35 +14,39 @@ function createDiagram(name = "Untitled Diagram") {
   };
 }
 
-function loadFromStorage() {
+/**
+ * Compute initial { diagrams, activeDiagramId } from localStorage in one pass.
+ * Advances nextDiagramId / nextPointId past any stored values to prevent collisions.
+ */
+function getInitialState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        // Restore nextDiagramId to avoid ID collisions
         parsed.forEach((d) => {
           const num = parseInt(d.id.replace("diagram-", ""), 10);
           if (!isNaN(num) && num >= nextDiagramId) nextDiagramId = num + 1;
           d.points.forEach((p) => {
-            if (p.id >= nextPointId) nextPointId = p.id + 1;
+            if (typeof p.id === "number" && p.id >= nextPointId) nextPointId = p.id + 1;
           });
         });
-        return parsed;
+
+        const storedActiveId = localStorage.getItem(ACTIVE_DIAGRAM_KEY);
+        const activeDiagramId =
+          storedActiveId && parsed.find((d) => d.id === storedActiveId)
+            ? storedActiveId
+            : parsed[0].id;
+
+        return { diagrams: parsed, activeDiagramId };
       }
     }
   } catch {
-    // ignore parse errors
+    // Corrupt storage — fall through to defaults
   }
-  return null;
-}
 
-function loadActiveIdFromStorage() {
-  try {
-    return localStorage.getItem(ACTIVE_DIAGRAM_KEY) || null;
-  } catch {
-    return null;
-  }
+  const initial = createDiagram("Effort vs Impact");
+  return { diagrams: [initial], activeDiagramId: initial.id };
 }
 
 /**
@@ -51,34 +55,33 @@ function loadActiveIdFromStorage() {
  * @returns {object} Diagram management API
  */
 export function useDiagrams() {
-  const [diagrams, setDiagramsRaw] = useState(() => {
-    const stored = loadFromStorage();
-    return stored || [createDiagram("Effort vs Impact")];
-  });
+  const [{ diagrams, activeDiagramId }, setState] = useState(getInitialState);
 
-  const [activeDiagramId, setActiveDiagramId] = useState(() => {
-    const storedId = loadActiveIdFromStorage();
-    const stored = loadFromStorage();
-    if (stored && storedId && stored.find((d) => d.id === storedId)) {
-      return storedId;
-    }
-    const initial = loadFromStorage();
-    return initial ? initial[0].id : diagrams[0].id;
-  });
-
-  // Persist to localStorage on every change
   const setDiagrams = useCallback((updater) => {
-    setDiagramsRaw((prev) => {
-      const next = typeof updater === "function" ? updater(prev) : updater;
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-      } catch {
-        // storage full or unavailable
-      }
-      return next;
-    });
+    setState((prev) => ({
+      ...prev,
+      diagrams: typeof updater === "function" ? updater(prev.diagrams) : updater,
+    }));
   }, []);
 
+  const setActiveDiagramId = useCallback((idOrUpdater) => {
+    setState((prev) => ({
+      ...prev,
+      activeDiagramId:
+        typeof idOrUpdater === "function" ? idOrUpdater(prev.activeDiagramId) : idOrUpdater,
+    }));
+  }, []);
+
+  // Persist diagrams whenever they change
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(diagrams));
+    } catch {
+      // Storage full or unavailable — fail silently
+    }
+  }, [diagrams]);
+
+  // Persist active diagram ID whenever it changes
   useEffect(() => {
     try {
       localStorage.setItem(ACTIVE_DIAGRAM_KEY, activeDiagramId);

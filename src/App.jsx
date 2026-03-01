@@ -44,14 +44,38 @@ export default function App() {
   } = useDiagrams();
 
   // History for undo/redo (tracks points + config of active diagram)
-  const historyRef = useRef(null);
   const {
+    state: historyPresent,
     push: pushHistory,
     undo: undoHistory,
     redo: redoHistory,
+    reset: resetHistory,
     canUndo,
     canRedo,
   } = useHistory({ points: activeDiagram.points, config: activeDiagram.config });
+
+  // When true, the next historyPresent change should be applied back to the
+  // diagram store (i.e. the user triggered undo or redo).
+  const pendingHistoryApply = useRef(false);
+
+  useEffect(() => {
+    if (pendingHistoryApply.current) {
+      pendingHistoryApply.current = false;
+      replaceDiagramData(historyPresent);
+    }
+  }, [historyPresent, replaceDiagramData]);
+
+  // Reset per-diagram undo/redo history when the active diagram changes.
+  const prevDiagramId = useRef(activeDiagramId);
+  useEffect(() => {
+    if (prevDiagramId.current !== activeDiagramId) {
+      prevDiagramId.current = activeDiagramId;
+      resetHistory({ points: activeDiagram.points, config: activeDiagram.config });
+    }
+  // activeDiagram.points/config intentionally omitted — we only want to reset
+  // when the diagram itself changes, not on every edit.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDiagramId, resetHistory]);
 
   // UI state
   const [showConfig, setShowConfig] = useState(false);
@@ -99,17 +123,16 @@ export default function App() {
   }, [activeDiagram.points, activeDiagram.config, pushHistory]);
 
   const handleUndo = useCallback(() => {
+    if (!canUndo) return;
+    pendingHistoryApply.current = true;
     undoHistory();
-    // useHistory returns the new present after undo
-    // We sync via a different approach: re-apply from history state
-  }, [undoHistory]);
+  }, [undoHistory, canUndo]);
 
   const handleRedo = useCallback(() => {
+    if (!canRedo) return;
+    pendingHistoryApply.current = true;
     redoHistory();
-  }, [redoHistory]);
-
-  // Sync history state back to diagram store
-  const historyState = useRef({ points: activeDiagram.points, config: activeDiagram.config });
+  }, [redoHistory, canRedo]);
 
   // --- Point drag handlers ---
   const handlePointMove = useCallback(
