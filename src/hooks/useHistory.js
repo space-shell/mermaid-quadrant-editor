@@ -6,7 +6,7 @@ import { MAX_HISTORY } from "../constants.js";
  * Stores up to MAX_HISTORY snapshots of (points, config).
  *
  * @param {object} initialState - { points, config }
- * @returns {{ state, push, undo, redo, canUndo, canRedo }}
+ * @returns {{ state, push, undo, redo, reset, canUndo, canRedo }}
  */
 export function useHistory(initialState) {
   const [historyState, dispatch] = useReducer(historyReducer, {
@@ -27,13 +27,21 @@ export function useHistory(initialState) {
     dispatch({ type: "REDO" });
   }, []);
 
+  /** Clear history and set a new present (used when switching diagrams). */
+  const reset = useCallback((newState) => {
+    dispatch({ type: "RESET", payload: newState });
+  }, []);
+
   return {
     state: historyState.present,
     push,
     undo,
     redo,
+    reset,
     canUndo: historyState.past.length > 0,
     canRedo: historyState.future.length > 0,
+    pastTop: historyState.past.length > 0 ? historyState.past[historyState.past.length - 1] : null,
+    futureTop: historyState.future.length > 0 ? historyState.future[0] : null,
   };
 }
 
@@ -56,6 +64,9 @@ function historyReducer(state, action) {
       const present = state.future[0];
       const future = state.future.slice(1);
       return { past, present, future };
+    }
+    case "RESET": {
+      return { past: [], present: action.payload, future: [] };
     }
     default:
       return state;
